@@ -1,0 +1,53 @@
+workflow:
+  rules:
+      # push code at master branch with the message incluide "Push by semantic-release-bot in"
+    - if: ($CI_PIPELINE_SOURCE == "push") && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH ) && ($CI_COMMIT_MESSAGE =~ /Push by semantic-release-bot in/)
+      when: never
+      # push code at master branch with tag
+    - if: ($CI_PIPELINE_SOURCE == "push") && ($CI_COMMIT_TAG)
+      when: never
+    - when: always
+
+stages:
+  - prepare
+  - release
+  - deploy
+
+versioning:
+  stage: prepare
+  tags:
+    - "linux_x64"
+  image: "node:latest"
+  script:
+    - npm install
+    - echo VERSION=$(npx semantic-release --dryRun | grep -oP 'Published release \K.*? ' | tr -d ' ') > version.env
+  artifacts:
+    reports:
+      dotenv: version.env
+
+semantic-release:
+  stage: release
+  tags:
+    - "linux_x64"
+  image: "node:latest"
+  script:
+    - npm install
+    - npm run semantic-release
+  rules:
+    - if: ($CI_PIPELINE_SOURCE == "push") && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) && ($CI_COMMIT_MESSAGE =~ /^publish/)
+
+cf-release-page:
+  stage: deploy
+  tags:
+    - "linux_x64"
+  image: kovetskiy/mark:latest
+  script:
+    - cd .cf
+    - cp template/cf_template.md CFReleasePage.md
+    - chmod +x ParseAndCreateTicketTable.sh
+    - ./ParseAndCreateTicketTable.sh
+    - chmod +x MakeCFReleasePage.sh
+    - ./MakeCFReleasePage.sh
+    - mark -u $CF_USER -p $CF_PASS -b $CF_URL -f "CFReleasePage.md"
+  rules:
+    - if: ($CI_PIPELINE_SOURCE == "push") && ($CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH) && ($CI_COMMIT_MESSAGE =~ /^publish/)
